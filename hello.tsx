@@ -25,7 +25,12 @@ try {
   connection.release();
 }
 
-function App() {
+type Todo = {
+  id: number;
+  title: string;
+};
+
+function TodoList({ todos }: { todos: Todo[] }) {
   return (
     <html>
       <head>
@@ -33,18 +38,59 @@ function App() {
       </head>
       <body>
         <h1>Hello world!</h1>
+        {todos.map((todo) => (
+          <dl key={todo.id}>
+            <dt>{todo.title}</dt>
+          </dl>
+        ))}
       </body>
     </html>
   );
 }
 
-function handler(req) {
-  const html = renderSSR(<App />);
-  return new Response(html, {
-    headers: {
-      'content-type': 'text/html',
-    },
-  });
-}
+serve(async (req) => {
+  const url = new URL(req.url);
 
-serve(handler);
+  if (url.pathname !== '/todos') {
+    return new Response('Not Found', { status: 404 });
+  }
+
+  const connection = await pool.connect();
+
+  try {
+    switch (req.method) {
+      case 'GET': {
+        const result = await connection.queryObject<Todo>`
+            SELECT * from todos
+        `;
+
+        const html = renderSSR(<TodoList todos={result.rows} />);
+        return new Response(html, {
+          headers: {
+            'content-type': 'text/html',
+          },
+        });
+      }
+      case 'POST': {
+        const title = await req.json().catch(() => null);
+        if (typeof title !== 'string' || title.length > 256) {
+          return new Response('Bad Request', { status: 400 });
+        }
+
+        await connection.queryObject`
+            INSERT INTO todos (title) VALUES (${title})
+        `;
+
+        return new Response('', { status: 201 });
+      }
+      default: {
+        return new Response('Method Not Allowed', { status: 405 });
+      }
+    }
+  } catch (err) {
+    console.error(err);
+    return new Response(`Internal Server Error\n\n${err.message}`, { status: 500 });
+  } finally {
+    connection.release();
+  }
+});
