@@ -12,6 +12,19 @@ const databaseUrl = Deno.env.get('DATABASE_URL');
 
 const pool = new postgres.Pool(databaseUrl, 3, true);
 
+const connection = await pool.connect();
+
+try {
+  await connection.queryObject`
+    CREATE TABLE IF NOT EXISTS todos (
+      id SERIAL PRIMARY KEY,
+      title TEXT NOT NULL
+    )
+  `;
+} finally {
+  connection.release();
+}
+
 function App() {
   return (
     <html>
